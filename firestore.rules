@@ -1,0 +1,48 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // User account document: users/{userId}
+    // Users can read any profile info needed for app display, but can ONLY create or update their own
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId);
+      allow delete: if false; // User accounts are preserved
+
+      // User favorites subcollection: users/{userId}/favorites/{shopId}
+      match /favorites/{shopId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Shops collection: shops/{shopId}
+    match /shops/{shopId} {
+      // 1. Any authenticated user (Customers & Shop Owners) can read shops
+      allow read: if isAuthenticated();
+
+      // 2. Only authenticated users can create shops, and must set ownerId to their own UID
+      allow create: if isAuthenticated() 
+                    && request.resource.data.ownerId == request.auth.uid;
+
+      // 3. Only the shop owner can update their own shop
+      // Prevents customers from modifying shop documents or other owners from altering shops
+      allow update: if isAuthenticated() 
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == request.auth.uid;
+
+      // 4. Only the shop owner can delete their shop
+      allow delete: if isAuthenticated() 
+                    && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}
